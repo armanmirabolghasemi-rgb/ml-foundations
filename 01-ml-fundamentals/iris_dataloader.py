@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
@@ -91,8 +93,16 @@ optimizer = torch.optim.Adam(
 )
 
 
+# Early stopping settings
+best_validation_loss = float("inf")
+patience = 3
+epochs_without_improvement = 0
+
+best_model_state = None
+
+
 # Training
-for epoch in range(10):
+for epoch in range(50):
 
     model.train()
 
@@ -115,12 +125,15 @@ for epoch in range(10):
 
         total_loss += loss.item()
 
-    average_loss = total_loss / len(train_loader)
+    average_train_loss = (
+        total_loss / len(train_loader)
+    )
 
 
     # Validation
     model.eval()
 
+    total_validation_loss = 0
     correct_validation = 0
     total_validation = 0
 
@@ -129,6 +142,13 @@ for epoch in range(10):
         for features_batch, labels_batch in validation_loader:
 
             prediction = model(features_batch)
+
+            loss = loss_function(
+                prediction,
+                labels_batch
+            )
+
+            total_validation_loss += loss.item()
 
             predicted_class = torch.argmax(
                 prediction,
@@ -142,6 +162,10 @@ for epoch in range(10):
             total_validation += labels_batch.size(0)
 
 
+    average_validation_loss = (
+        total_validation_loss / len(validation_loader)
+    )
+
     validation_accuracy = (
         correct_validation / total_validation
     )
@@ -149,10 +173,55 @@ for epoch in range(10):
 
     print(
         f"Epoch: {epoch + 1} | "
-        f"Loss: {average_loss:.4f} | "
+        f"Train Loss: {average_train_loss:.4f} | "
+        f"Validation Loss: {average_validation_loss:.4f} | "
         f"Validation Accuracy: {validation_accuracy:.4f}"
     )
 
+
+    # Check validation loss improvement
+    if average_validation_loss < best_validation_loss:
+
+        best_validation_loss = average_validation_loss
+
+        epochs_without_improvement = 0
+
+        best_model_state = copy.deepcopy(
+            model.state_dict()
+        )
+
+        print("Best model updated.")
+
+    else:
+
+        epochs_without_improvement += 1
+
+        print(
+            f"No improvement: "
+            f"{epochs_without_improvement}/{patience}"
+        )
+
+
+    # Stop training when validation loss does not improve
+    if epochs_without_improvement >= patience:
+
+        print("Early stopping triggered.")
+
+        break
+
+
+# Restore the best model
+model.load_state_dict(
+    best_model_state
+)
+
+# Save the best model
+torch.save(
+    model.state_dict(),
+    "iris_model.pth"
+)
+
+print("Model saved.")
 
 # Final test evaluation
 model.eval()
